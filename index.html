@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Snake Game</title>
+    <title>Blue Dragon Game</title>
     <style>
       :root {
         color-scheme: dark;
@@ -58,12 +58,12 @@
   </head>
   <body>
     <main class="game-shell">
-      <h1>Snake</h1>
+      <h1>Blue Dragon</h1>
       <div class="stats">
         <span>Score: <strong id="score">0</strong></span>
         <span>High Score: <strong id="high-score">0</strong></span>
       </div>
-      <canvas id="game" width="400" height="400" aria-label="Snake game board"></canvas>
+      <canvas id="game" width="400" height="400" aria-label="Blue dragon game board"></canvas>
       <p class="hint">Use arrow keys or WASD. Press Space to restart after game over.</p>
     </main>
 
@@ -80,7 +80,7 @@
       let nextDirection;
       let food;
       let score;
-      let highScore = Number(localStorage.getItem("snake-high-score") || 0);
+      let highScore = Number(localStorage.getItem("dragon-high-score") || 0);
       let gameOver;
 
       highScoreEl.textContent = highScore;
@@ -116,6 +116,34 @@
         ctx.fillRect(x * tileSize, y * tileSize, tileSize - 1, tileSize - 1);
       }
 
+      function drawDragonSegment(segment, index) {
+        const px = segment.x * tileSize;
+        const py = segment.y * tileSize;
+
+        ctx.fillStyle = index === 0 ? "#38bdf8" : "#0ea5e9";
+        ctx.fillRect(px + 1, py + 1, tileSize - 2, tileSize - 2);
+
+        // Scales
+        ctx.fillStyle = "#7dd3fc";
+        ctx.fillRect(px + tileSize * 0.25, py + tileSize * 0.25, tileSize * 0.5, tileSize * 0.15);
+
+        if (index === 0) {
+          // Eyes
+          ctx.fillStyle = "#f8fafc";
+          ctx.fillRect(px + tileSize * 0.2, py + tileSize * 0.2, tileSize * 0.18, tileSize * 0.18);
+          ctx.fillRect(px + tileSize * 0.62, py + tileSize * 0.2, tileSize * 0.18, tileSize * 0.18);
+
+          // Horns
+          ctx.fillStyle = "#dbeafe";
+          ctx.fillRect(px + tileSize * 0.15, py + 1, tileSize * 0.1, tileSize * 0.2);
+          ctx.fillRect(px + tileSize * 0.75, py + 1, tileSize * 0.1, tileSize * 0.2);
+        } else {
+          // Back spikes
+          ctx.fillStyle = "#bae6fd";
+          ctx.fillRect(px + tileSize * 0.42, py + 1, tileSize * 0.16, tileSize * 0.22);
+        }
+      }
+
       function drawGame() {
         ctx.fillStyle = "#020617";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -123,7 +151,7 @@
         drawRect(food.x, food.y, "#ef4444");
 
         snake.forEach((segment, index) => {
-          drawRect(segment.x, segment.y, index === 0 ? "#22c55e" : "#4ade80");
+          drawDragonSegment(segment, index);
         });
 
         if (gameOver) {
@@ -167,7 +195,7 @@
           if (score > highScore) {
             highScore = score;
             highScoreEl.textContent = highScore;
-            localStorage.setItem("snake-high-score", String(highScore));
+            localStorage.setItem("dragon-high-score", String(highScore));
           }
           food = spawnFood();
         } else {
