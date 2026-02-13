@@ -9,40 +9,70 @@
         color-scheme: dark;
       }
 
+      * {
+        box-sizing: border-box;
+      }
+
       body {
         margin: 0;
         min-height: 100vh;
         display: grid;
         place-items: center;
-        background: #0b1020;
+        background:
+          radial-gradient(circle at 20% 20%, rgba(168, 85, 247, 0.25), transparent 35%),
+          radial-gradient(circle at 80% 30%, rgba(14, 165, 233, 0.2), transparent 40%),
+          radial-gradient(circle at 30% 85%, rgba(34, 197, 94, 0.15), transparent 40%),
+          #020617;
         color: #e2e8f0;
-        font-family: Arial, sans-serif;
+        font-family: "Trebuchet MS", Arial, sans-serif;
       }
 
       .game-shell {
         text-align: center;
-        padding: 1.25rem;
-        border-radius: 12px;
-        background: #111827;
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+        padding: 1.2rem;
+        border-radius: 18px;
+        position: relative;
+        background: linear-gradient(170deg, rgba(15, 23, 42, 0.95), rgba(30, 41, 59, 0.9));
+        box-shadow: 0 18px 40px rgba(2, 6, 23, 0.65);
+        border: 2px solid rgba(125, 211, 252, 0.35);
+      }
+
+      .game-shell::before {
+        content: "🐉 🔥 🐲 ⚡ 🐉";
+        position: absolute;
+        left: 50%;
+        top: -0.9rem;
+        transform: translateX(-50%);
+        letter-spacing: 0.35rem;
+        font-size: 1rem;
+      }
+
+      .frame {
+        padding: 10px;
+        border-radius: 14px;
+        background:
+          linear-gradient(120deg, #ef4444, #f59e0b, #eab308, #22c55e, #06b6d4, #3b82f6, #8b5cf6, #ec4899);
       }
 
       h1 {
-        margin-top: 0;
+        margin-top: 0.1rem;
         margin-bottom: 0.5rem;
-        font-size: 1.4rem;
+        font-size: 1.45rem;
+        color: #dbeafe;
+        text-shadow: 0 0 10px rgba(56, 189, 248, 0.4);
       }
 
       .stats {
         display: flex;
         justify-content: space-between;
-        gap: 1.5rem;
-        margin-bottom: 0.75rem;
+        gap: 1.2rem;
+        margin-bottom: 0.7rem;
         font-size: 0.95rem;
       }
 
       #game {
-        border: 2px solid #334155;
+        border: 3px solid #0ea5e9;
+        border-radius: 10px;
         background: #020617;
         display: block;
         margin-inline: auto;
@@ -51,8 +81,26 @@
       .hint {
         margin-top: 0.75rem;
         margin-bottom: 0;
-        color: #94a3b8;
-        font-size: 0.85rem;
+        color: #93c5fd;
+        font-size: 0.84rem;
+        line-height: 1.45;
+      }
+
+      .legend {
+        margin-top: 0.5rem;
+        display: flex;
+        justify-content: center;
+        gap: 1rem;
+        font-size: 0.8rem;
+        color: #cbd5e1;
+      }
+
+      .swatch {
+        width: 10px;
+        height: 10px;
+        display: inline-block;
+        border-radius: 2px;
+        margin-right: 0.3rem;
       }
     </style>
   </head>
@@ -63,8 +111,17 @@
         <span>Score: <strong id="score">0</strong></span>
         <span>High Score: <strong id="high-score">0</strong></span>
       </div>
-      <canvas id="game" width="400" height="400" aria-label="Blue dragon game board"></canvas>
-      <p class="hint">Use arrow keys or WASD. Press Space to restart after game over.</p>
+      <div class="frame">
+        <canvas id="game" width="400" height="400" aria-label="Blue dragon game board"></canvas>
+      </div>
+      <p class="hint">
+        Arrow keys or WASD to move. Space restarts after game over.<br />
+        Edge food = 2x points. Purple rune = 2x points + 2x speed (temporary).
+      </p>
+      <div class="legend">
+        <span><i class="swatch" style="background:#ef4444"></i>Food</span>
+        <span><i class="swatch" style="background:#a855f7"></i>Power Rune</span>
+      </div>
     </main>
 
     <script>
@@ -75,15 +132,34 @@
 
       const gridSize = 20;
       const tileSize = canvas.width / gridSize;
+      const baseTickMs = 120;
+      const poweredTickMs = 60;
+      const powerDurationMs = 7000;
+
       let snake;
       let direction;
       let nextDirection;
       let food;
+      let powerUp;
       let score;
       let highScore = Number(localStorage.getItem("dragon-high-score") || 0);
       let gameOver;
+      let powerUpUntil = 0;
+      let loopHandle;
 
       highScoreEl.textContent = highScore;
+
+      function isEdgeTile(point) {
+        return point.x === 0 || point.y === 0 || point.x === gridSize - 1 || point.y === gridSize - 1;
+      }
+
+      function pointsMultiplier() {
+        return Date.now() < powerUpUntil ? 2 : 1;
+      }
+
+      function currentTickSpeed() {
+        return Date.now() < powerUpUntil ? poweredTickMs : baseTickMs;
+      }
 
       function resetGame() {
         snake = [
@@ -93,76 +169,150 @@
         ];
         direction = { x: 1, y: 0 };
         nextDirection = { x: 1, y: 0 };
-        food = spawnFood();
         score = 0;
+        powerUpUntil = 0;
+        food = spawnPoint();
+        powerUp = null;
+        maybeSpawnPowerUp();
         scoreEl.textContent = score;
         gameOver = false;
       }
 
-      function spawnFood() {
+      function tileOccupiedBySnake(point) {
+        return snake.some((segment) => segment.x === point.x && segment.y === point.y);
+      }
+
+      function spawnPoint() {
         let point;
         do {
           point = {
             x: Math.floor(Math.random() * gridSize),
             y: Math.floor(Math.random() * gridSize),
           };
-        } while (snake?.some((segment) => segment.x === point.x && segment.y === point.y));
-
+        } while (
+          tileOccupiedBySnake(point) ||
+          (food && point.x === food.x && point.y === food.y) ||
+          (powerUp && point.x === powerUp.x && point.y === powerUp.y)
+        );
         return point;
       }
 
-      function drawRect(x, y, color) {
-        ctx.fillStyle = color;
-        ctx.fillRect(x * tileSize, y * tileSize, tileSize - 1, tileSize - 1);
+      function maybeSpawnPowerUp() {
+        if (powerUp || gameOver) {
+          return;
+        }
+
+        if (Math.random() < 0.28) {
+          powerUp = spawnPoint();
+        }
       }
 
-      function drawDragonSegment(segment, index) {
+      function drawDragonSegment(segment, index, totalSegments) {
         const px = segment.x * tileSize;
         const py = segment.y * tileSize;
 
         ctx.fillStyle = index === 0 ? "#38bdf8" : "#0ea5e9";
         ctx.fillRect(px + 1, py + 1, tileSize - 2, tileSize - 2);
 
-        // Scales
         ctx.fillStyle = "#7dd3fc";
-        ctx.fillRect(px + tileSize * 0.25, py + tileSize * 0.25, tileSize * 0.5, tileSize * 0.15);
+        ctx.fillRect(px + tileSize * 0.24, py + tileSize * 0.25, tileSize * 0.52, tileSize * 0.18);
 
         if (index === 0) {
-          // Eyes
-          ctx.fillStyle = "#f8fafc";
-          ctx.fillRect(px + tileSize * 0.2, py + tileSize * 0.2, tileSize * 0.18, tileSize * 0.18);
-          ctx.fillRect(px + tileSize * 0.62, py + tileSize * 0.2, tileSize * 0.18, tileSize * 0.18);
+          // Dragon head features
+          ctx.fillStyle = "#e0f2fe";
+          ctx.fillRect(px + tileSize * 0.13, py + tileSize * 0.1, tileSize * 0.14, tileSize * 0.2);
+          ctx.fillRect(px + tileSize * 0.74, py + tileSize * 0.1, tileSize * 0.14, tileSize * 0.2);
 
-          // Horns
-          ctx.fillStyle = "#dbeafe";
-          ctx.fillRect(px + tileSize * 0.15, py + 1, tileSize * 0.1, tileSize * 0.2);
-          ctx.fillRect(px + tileSize * 0.75, py + 1, tileSize * 0.1, tileSize * 0.2);
-        } else {
-          // Back spikes
+          ctx.fillStyle = "#f8fafc";
+          ctx.fillRect(px + tileSize * 0.2, py + tileSize * 0.35, tileSize * 0.18, tileSize * 0.18);
+          ctx.fillRect(px + tileSize * 0.62, py + tileSize * 0.35, tileSize * 0.18, tileSize * 0.18);
+
+          ctx.fillStyle = "#0f172a";
+          ctx.fillRect(px + tileSize * 0.27, py + tileSize * 0.41, tileSize * 0.07, tileSize * 0.07);
+          ctx.fillRect(px + tileSize * 0.68, py + tileSize * 0.41, tileSize * 0.07, tileSize * 0.07);
+
+          // Snout
           ctx.fillStyle = "#bae6fd";
-          ctx.fillRect(px + tileSize * 0.42, py + 1, tileSize * 0.16, tileSize * 0.22);
+          ctx.fillRect(px + tileSize * 0.34, py + tileSize * 0.65, tileSize * 0.32, tileSize * 0.2);
+        } else if (index < Math.ceil(totalSegments / 2)) {
+          // Wings on upper body
+          ctx.fillStyle = "rgba(186, 230, 253, 0.9)";
+          ctx.fillRect(px - tileSize * 0.15, py + tileSize * 0.3, tileSize * 0.16, tileSize * 0.35);
+          ctx.fillRect(px + tileSize * 0.99, py + tileSize * 0.3, tileSize * 0.16, tileSize * 0.35);
+
+          ctx.fillStyle = "#bae6fd";
+          ctx.fillRect(px + tileSize * 0.42, py + 1, tileSize * 0.16, tileSize * 0.23);
+        } else {
+          // Tail spikes
+          ctx.fillStyle = "#67e8f9";
+          ctx.fillRect(px + tileSize * 0.44, py + 1, tileSize * 0.12, tileSize * 0.18);
         }
+      }
+
+      function drawFood() {
+        const px = food.x * tileSize;
+        const py = food.y * tileSize;
+        const edgeFood = isEdgeTile(food);
+
+        ctx.fillStyle = edgeFood ? "#f97316" : "#ef4444";
+        ctx.fillRect(px + 2, py + 2, tileSize - 4, tileSize - 4);
+
+        if (edgeFood) {
+          ctx.fillStyle = "#fde68a";
+          ctx.fillRect(px + tileSize * 0.35, py + tileSize * 0.12, tileSize * 0.3, tileSize * 0.15);
+        }
+      }
+
+      function drawPowerUp() {
+        if (!powerUp) {
+          return;
+        }
+
+        const px = powerUp.x * tileSize;
+        const py = powerUp.y * tileSize;
+
+        ctx.fillStyle = "#a855f7";
+        ctx.fillRect(px + 2, py + 2, tileSize - 4, tileSize - 4);
+        ctx.fillStyle = "#f5d0fe";
+        ctx.fillRect(px + tileSize * 0.44, py + tileSize * 0.15, tileSize * 0.12, tileSize * 0.7);
+        ctx.fillRect(px + tileSize * 0.2, py + tileSize * 0.42, tileSize * 0.6, tileSize * 0.12);
       }
 
       function drawGame() {
         ctx.fillStyle = "#020617";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        drawRect(food.x, food.y, "#ef4444");
+        drawFood();
+        drawPowerUp();
+        snake.forEach((segment, index) => drawDragonSegment(segment, index, snake.length));
 
-        snake.forEach((segment, index) => {
-          drawDragonSegment(segment, index);
-        });
+        if (Date.now() < powerUpUntil && !gameOver) {
+          ctx.fillStyle = "rgba(168, 85, 247, 0.18)";
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
 
         if (gameOver) {
-          ctx.fillStyle = "rgba(2, 6, 23, 0.75)";
+          ctx.fillStyle = "rgba(2, 6, 23, 0.76)";
           ctx.fillRect(0, 0, canvas.width, canvas.height);
           ctx.fillStyle = "#f8fafc";
           ctx.font = "bold 30px Arial";
           ctx.textAlign = "center";
-          ctx.fillText("Game Over", canvas.width / 2, canvas.height / 2 - 5);
+          ctx.fillText("Dragon Down", canvas.width / 2, canvas.height / 2 - 8);
           ctx.font = "16px Arial";
-          ctx.fillText("Press Space to restart", canvas.width / 2, canvas.height / 2 + 24);
+          ctx.fillText("Press Space to relaunch", canvas.width / 2, canvas.height / 2 + 20);
+        }
+      }
+
+      function awardFoodPoints() {
+        const edgeBonus = isEdgeTile(food) ? 2 : 1;
+        const gained = 10 * edgeBonus * pointsMultiplier();
+        score += gained;
+        scoreEl.textContent = score;
+
+        if (score > highScore) {
+          highScore = score;
+          highScoreEl.textContent = highScore;
+          localStorage.setItem("dragon-high-score", String(highScore));
         }
       }
 
@@ -180,7 +330,6 @@
 
         const hitWall = head.x < 0 || head.y < 0 || head.x >= gridSize || head.y >= gridSize;
         const hitSelf = snake.some((segment) => segment.x === head.x && segment.y === head.y);
-
         if (hitWall || hitSelf) {
           gameOver = true;
           drawGame();
@@ -190,19 +339,25 @@
         snake.unshift(head);
 
         if (head.x === food.x && head.y === food.y) {
-          score += 10;
-          scoreEl.textContent = score;
-          if (score > highScore) {
-            highScore = score;
-            highScoreEl.textContent = highScore;
-            localStorage.setItem("dragon-high-score", String(highScore));
-          }
-          food = spawnFood();
+          awardFoodPoints();
+          food = spawnPoint();
+          maybeSpawnPowerUp();
         } else {
           snake.pop();
         }
 
+        if (powerUp && head.x === powerUp.x && head.y === powerUp.y) {
+          powerUpUntil = Date.now() + powerDurationMs;
+          powerUp = null;
+        }
+
         drawGame();
+      }
+
+      function loop() {
+        update();
+        clearTimeout(loopHandle);
+        loopHandle = setTimeout(loop, currentTickSpeed());
       }
 
       function setDirection(x, y) {
@@ -229,7 +384,7 @@
 
       resetGame();
       drawGame();
-      setInterval(update, 110);
+      loop();
     </script>
   </body>
 </html>
